@@ -1,0 +1,214 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b7a4b">
+<title>Perfect Hit</title>
+
+<style>
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #0b7a4b;
+    color: #ffffff;
+    font-family: sans-serif;
+    text-align: center;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  #hud {
+    padding-top: 26px;
+    font-size: 44px;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+
+  #lives {
+    font-size: 15px;
+    opacity: 0.85;
+    margin-top: 6px;
+    letter-spacing: 3px;
+  }
+
+  #wrap {
+    position: absolute;
+    top: 45%;
+    left: 6%;
+    right: 6%;
+    height: 64px;
+  }
+
+  #track {
+    position: absolute;
+    inset: 0;
+    background: #08553a;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  #zone {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: #ffd34d;
+    border-radius: 6px;
+  }
+
+  #picker {
+    position: absolute;
+    top: -8px;
+    bottom: -8px;
+    width: 6px;
+    background: #ffffff;
+    border-radius: 3px;
+  }
+
+  #msg {
+    margin-top: 34px;
+    font-size: 22px;
+    font-weight: bold;
+  }
+
+  #hint {
+    opacity: 0.75;
+    font-size: 14px;
+    margin-top: 10px;
+  }
+
+  .flash { animation: pop 0.18s ease-out; }
+  @keyframes pop {
+    from { transform: scale(1.18); }
+    to   { transform: scale(1); }
+  }
+</style>
+</head>
+
+<body>
+  <div id="hud">0</div>
+  <div id="lives">&#9679; &#9679; &#9679;</div>
+
+  <div id="wrap">
+    <div id="track">
+      <div id="zone"></div>
+      <div id="picker"></div>
+    </div>
+  </div>
+
+  <div id="msg">Tap anywhere to start</div>
+  <div id="hint">Best 0</div>
+
+<script>
+var hud   = document.getElementById("hud");
+var livesEl = document.getElementById("lives");
+var zoneEl  = document.getElementById("zone");
+var pick    = document.getElementById("picker");
+var msg     = document.getElementById("msg");
+var hint    = document.getElementById("hint");
+
+/* ---- tunable numbers: the whole game feel lives here ---- */
+var START_SPEED  = 55;    /* percent of the track per second */
+var MAX_SPEED    = 230;
+var SPEED_STEP   = 5;
+var ZONE_START   = 22;    /* starting zone width, percent */
+var ZONE_MIN     = 7;     /* never shrink below this, keeps it fair */
+var ZONE_SHRINK  = 0.6;   /* width lost per point */
+
+var best = parseInt(localStorage.getItem("ph-best") || "0", 10);
+var pos = 0, dir = 1, speed = START_SPEED;
+var score = 0, lives = 3, playing = false, last = 0;
+var zoneL = 40, zoneW = ZONE_START;
+
+hint.textContent = "Best " + best;
+
+function newZone() {
+  zoneW = Math.max(ZONE_MIN, ZONE_START - score * ZONE_SHRINK);
+  zoneL = 4 + Math.random() * (92 - zoneW);
+  zoneEl.style.width = zoneW + "%";
+  zoneEl.style.left  = zoneL + "%";
+}
+
+function paint() {
+  hud.textContent = score;
+  hud.classList.remove("flash");
+  void hud.offsetWidth;          /* restart the animation */
+  hud.classList.add("flash");
+
+  var d = "";
+  for (var i = 0; i < 3; i++) d += (i < lives ? "\u25CF " : "\u25CB ");
+  livesEl.textContent = d.trim();
+}
+
+function loop(t) {
+  if (!playing) return;
+  var dt = (t - last) / 1000;
+  last = t;
+  if (dt > 0.06) dt = 0.06;      /* stop jumps after a lag spike */
+
+  pos += dir * speed * dt;
+  if (pos > 100) { pos = 100; dir = -1; }
+  if (pos < 0)   { pos = 0;   dir =  1; }
+  pick.style.left = pos + "%";
+
+  requestAnimationFrame(loop);
+}
+
+function start() {
+  score = 0; lives = 3;
+  pos = 0; dir = 1; speed = START_SPEED;
+  playing = true;
+  msg.textContent = "";
+  newZone();
+  paint();
+  requestAnimationFrame(function (t) { last = t; loop(t); });
+}
+
+function over() {
+  playing = false;
+  if (score > best) {
+    best = score;
+    localStorage.setItem("ph-best", String(best));
+    msg.textContent = "New best! " + score;
+  } else {
+    msg.textContent = "Game over \u2014 " + score;
+  }
+  hint.textContent = "Best " + best + "  \u00B7  Tap to play again";
+}
+
+function tap() {
+  if (!playing) { start(); return; }
+
+  var hit = (pos >= zoneL && pos <= zoneL + zoneW);
+
+  if (hit) {
+    score++;
+    speed = Math.min(MAX_SPEED, speed + SPEED_STEP);
+    if (navigator.vibrate) navigator.vibrate(18);
+    newZone();
+    paint();
+  } else {
+    lives--;
+    paint();
+    if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
+    if (lives <= 0) over();
+  }
+}
+
+document.addEventListener("pointerdown", function (e) {
+  e.preventDefault();
+  tap();
+}, { passive: false });
+
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden && playing) over();   /* no cheating when tabbed out */
+});
+
+paint();
+</script>
+</body>
+  </html>
